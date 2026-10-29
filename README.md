@@ -22,7 +22,7 @@ Nada de Supabase. SMS no tiene opción gratuita confiable: se usa correo + Teleg
 1. Entra a `labsnexo-ba465` en console.firebase.google.com. **Authentication** ya debería tener Google activo; si no, actívalo.
 2. **Firestore > Reglas**: **no borres las que hay.** Copia en ellas, dentro de `match /databases/{database}/documents { ... }`,
    las funciones y los bloques `mt_*` de `firestore.rules` y publica. Las colecciones de MotorTrack empiezan con `mt_`, así que no chocan con LabsNexo.
-3. **Configuración del proyecto > Tus apps > Agregar app Web (</>)**, nombre `MotorTrack`. Copia el `firebaseConfig` a `config.js`.
+3. **Configuración del proyecto > Tus apps > Agregar app Web (</>)**, nombre `MotorTrack`. Copia el `firebaseConfig` a `public/config.js`.
 4. **Authentication > Configuración > Dominios autorizados**: agrega tu subdominio de Cloudflare.
 5. Para los recordatorios: **Cuentas de servicio > Generar nueva clave privada** (JSON). No la subas al repo.
    Ojo: esa clave tiene acceso a todo el proyecto, por eso va solo como secreto de GitHub. El script solo toca colecciones `mt_*`.
