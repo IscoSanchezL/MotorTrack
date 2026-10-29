@@ -39,6 +39,8 @@ service cloud.firestore {
     match /mt_documents/{id}   { allow read, delete: if mtOwn(); allow create: if mtNew(); allow update: if mtOwn() && mtNew(); }
     match /mt_maintenance/{id} { allow read, delete: if mtOwn(); allow create: if mtNew(); allow update: if mtOwn() && mtNew(); }
     match /mt_kmlog/{id}       { allow read, delete: if mtOwn(); allow create: if mtNew(); allow update: if mtOwn() && mtNew(); }
+    match /mt_files/{id}       { allow read, delete: if mtOwn(); allow create: if mtNew(); allow update: if mtOwn() && mtNew(); }
+    match /mt_blobs/{id}       { allow read, delete: if mtOwn(); allow create: if mtNew(); allow update: if mtOwn() && mtNew(); }
     // mt_remindersSent: sin reglas = solo el servidor (GitHub Actions) puede usarla
 
     // ===== Aquí van las reglas que YA tenía LabsNexo =====

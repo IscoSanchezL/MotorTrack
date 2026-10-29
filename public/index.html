@@ -70,6 +70,7 @@ dialog::backdrop{background:#0008}
 #toast{position:fixed;left:50%;bottom:20px;transform:translateX(-50%);background:var(--text);color:var(--bg);padding:10px 18px;border-radius:10px;opacity:0;pointer-events:none;transition:opacity .2s;z-index:20;max-width:90vw}
 #toast.on{opacity:1}
 .avatar{width:30px;height:30px;border-radius:50%}
+.file{display:inline-block;margin-bottom:2px}.file .x{color:var(--bad);text-decoration:none;margin-left:4px}
 .badge{background:var(--bad);color:#fff;border-radius:99px;padding:0 7px;font-size:.75rem;margin-left:4px}
 @media(max-width:560px){header.top .hide-sm{display:none}header.top h1 img{height:34px}}
 </style>
@@ -107,7 +108,7 @@ const add = (col, data) => addDoc(collection(db,col), {...data, user_id:uid(), c
 const upd = (col, id, data) => updateDoc(doc(db,col,id), data);
 const del = (col, id) => deleteDoc(doc(db,col,id));
 
-const state = {session:null, profile:null, vehicles:[], docs:[], maint:[], kmlog:[], users:[], tab:'docs'};
+const state = {session:null, profile:null, vehicles:[], docs:[], maint:[], kmlog:[], files:[], users:[], tab:'docs'};
 
 function toast(msg){ const t=$('#toast'); t.textContent=msg; t.classList.add('on'); clearTimeout(toast.t); toast.t=setTimeout(()=>t.classList.remove('on'),3500); }
 
@@ -133,12 +134,13 @@ async function load(){
   render();
 }
 async function loadAll(){
-  const [v,d,m,k] = await Promise.all([list('mt_vehicles'), list('mt_documents'), list('mt_maintenance'), list('mt_kmlog')]);
+  const [v,d,m,k,fl] = await Promise.all([list('mt_vehicles'), list('mt_documents'), list('mt_maintenance'), list('mt_kmlog'), list('mt_files')]);
   Object.assign(state,{
     vehicles: sortBy(v,['created_at',1]),
     docs: sortBy(d,['expiry_date',-1]),
     maint: sortBy(m,['done_at',-1],['created_at',-1]),
     kmlog: sortBy(k,['logged_at',-1],['created_at',-1]),
+    files: sortBy(fl,['created_at',1]),
   });
 }
 async function loadUsers(){
@@ -154,6 +156,60 @@ function kmPerDay(v){
   const a = k[k.length-1], b = k[0], days = (Date.parse(b.logged_at)-Date.parse(a.logged_at))/864e5;
   return days >= 7 && b.km > a.km ? (b.km-a.km)/days : null;
 }
+/* ---------- archivos adjuntos (guardados en Firestore, gratis) ---------- */
+const MAX_CHARS = 900000;
+const readUrl = f => new Promise((ok,ko) => { const r = new FileReader(); r.onload = () => ok(r.result); r.onerror = ko; r.readAsDataURL(f); });
+async function prepFile(f){
+  if(f.type.startsWith('image/')){
+    const bmp = await createImageBitmap(f), sc = Math.min(1, 1600/Math.max(bmp.width,bmp.height));
+    const c = document.createElement('canvas'); c.width = Math.round(bmp.width*sc); c.height = Math.round(bmp.height*sc);
+    c.getContext('2d').drawImage(bmp,0,0,c.width,c.height);
+    let q = .8, data = c.toDataURL('image/jpeg',q);
+    while(data.length > MAX_CHARS && q > .4){ q -= .1; data = c.toDataURL('image/jpeg',q); }
+    if(data.length > MAX_CHARS) throw new Error(`${f.name}: la imagen es demasiado grande`);
+    return {name:f.name.replace(/\.\w+$/,'')+'.jpg', type:'image/jpeg', data};
+  }
+  if(f.type === 'application/pdf'){
+    const data = await readUrl(f);
+    if(data.length > MAX_CHARS) throw new Error(`${f.name}: PDF muy pesado (máx. ~650 KB). Comprímelo o tómale foto.`);
+    return {name:f.name, type:f.type, data};
+  }
+  throw new Error(`${f.name}: solo se aceptan fotos o PDF`);
+}
+async function attachFiles(files, ref_col, ref_id, vehicle_id){
+  const errors = [];
+  for(const f of files){
+    try{
+      const {data, ...meta} = await prepFile(f);
+      const row = await add('mt_files', {...meta, size:data.length, ref_col, ref_id, vehicle_id});
+      await setDoc(doc(db,'mt_blobs',row.id), {user_id:uid(), data});
+    }catch(e){ errors.push(e.message); }
+  }
+  await loadAll();
+  if(errors.length) toast('No se adjuntó: ' + errors.join(' · '));
+  return errors.length === 0;
+}
+async function openFile(id){
+  const w = window.open('', '_blank');
+  try{
+    const snap = await getDoc(doc(db,'mt_blobs',id));
+    const blob = await (await fetch(snap.data().data)).blob();
+    const url = URL.createObjectURL(blob);
+    if(w) w.location = url; else location.href = url;
+  }catch(e){ w?.close(); toast(e.message); }
+}
+async function deleteFile(id){
+  if(!confirm('¿Borrar este archivo adjunto?')) return;
+  try{ await del('mt_files',id); await del('mt_blobs',id); await loadAll(); render(); }catch(e){ toast(e.message); }
+}
+function attachForm(col, id, vehicleId){
+  openForm({title:'Adjuntar archivos', submit:'Subir', fields:[{name:'files',label:'Fotos o PDF (máx. ~650 KB por PDF; las fotos se comprimen solas)',type:'file'}],
+    onSubmit: async d => { if(!d.files.length) throw new Error('Elige al menos un archivo'); await attachFiles(d.files, col, id, vehicleId); render(); }});
+}
+const filesCell = (col,id) => state.files.filter(f=>f.ref_col===col && f.ref_id===id)
+  .map(f=>`<span class="file"><a href="#" data-file="${f.id}">📎 ${esc(f.name)}</a> <a href="#" class="x" data-delfile="${f.id}" title="Quitar">✕</a></span>`).join('<br>')
+  + `<div><button class="btn sm ghost" data-attach="${col}:${id}">+ Adjuntar</button></div>`;
+
 function vehicleItems(v){
   const items = [];
   const kinds = [...TRACKED]; if(state.docs.some(d=>d.vehicle_id===v.id && d.kind==='seguro')) kinds.push('seguro');
@@ -183,6 +239,7 @@ function fieldHtml(f, vals){
   const req = f.required ? 'required' : '';
   if(f.type==='select') return `<label>${f.label}<select name="${f.name}" ${req}>${Object.entries(f.options).map(([k,t])=>`<option value="${k}" ${k===v?'selected':''}>${esc(t)}</option>`).join('')}</select></label>`;
   if(f.type==='textarea') return `<label>${f.label}<textarea name="${f.name}" rows="2">${esc(v)}</textarea></label>`;
+  if(f.type==='file') return `<label>${f.label}<input type="file" name="${f.name}" multiple accept="image/*,application/pdf"></label>`;
   if(f.type==='checkbox') return `<label class="chk"><input type="checkbox" name="${f.name}" ${v?'checked':''}>${f.label}</label>`;
   return `<label>${f.label}<input name="${f.name}" type="${f.type||'text'}" value="${esc(v)}" ${req} ${f.type==='number'?'inputmode="numeric" step="any" min="0"':''} placeholder="${esc(f.placeholder||'')}"></label>`;
 }
@@ -199,7 +256,8 @@ function openForm({title, fields, values={}, submit='Guardar', onSubmit, setup})
     const out = {};
     for(const f of fields){
       const el = form.elements[f.name];
-      if(f.type==='checkbox') out[f.name] = el.checked;
+      if(f.type==='file') out[f.name] = [...el.files];
+      else if(f.type==='checkbox') out[f.name] = el.checked;
       else{ let x = el.value.trim(); out[f.name] = x==='' ? null : f.type==='number' ? Number(x) : x; }
     }
     const btn = form.querySelector('.primary'); btn.disabled = true;
@@ -267,9 +325,10 @@ function docForm(v, kind){
       {name:'cost',label:'Valor pagado (COP)',type:'number'},
       {name:'reference',label:'Nº póliza / certificado / referencia'},
       {name:'notes',label:'Notas',type:'textarea'},
+      {name:'files',label:'Adjuntar soporte (foto o PDF)',type:'file'},
     ],
     setup: f => autofill(f,'issue_date','expiry_date',addYear),
-    onSubmit: async d => { await add('mt_documents', {...d, vehicle_id:v.id}); await loadAll(); render(); toast('Documento registrado'); },
+    onSubmit: async d => { const files = d.files; delete d.files; const r = await add('mt_documents', {...d, vehicle_id:v.id}); await loadAll(); if(files.length) await attachFiles(files,'mt_documents',r.id,v.id); render(); toast('Documento registrado'); },
   });
 }
 function maintForm(v, kind='aceite'){
@@ -284,12 +343,14 @@ function maintForm(v, kind='aceite'){
       {name:'cost',label:'Costo (COP)',type:'number'},
       {name:'shop',label:'Taller / lugar'},
       {name:'notes',label:'Notas (marca de aceite, filtro, etc.)',type:'textarea'},
+      {name:'files',label:'Adjuntar factura / soporte (foto o PDF)',type:'file'},
     ],
     setup: f => autofill(f,'km','next_km', x => f.elements.kind.value==='aceite' && x ? Number(x)+v.oil_interval_km : null),
     onSubmit: async d => {
-      await add('mt_maintenance', {...d, vehicle_id:v.id});
+      const files = d.files; delete d.files;
+      const r = await add('mt_maintenance', {...d, vehicle_id:v.id});
       if(d.km > v.current_km) await setKm(v.id, d.km, d.done_at);
-      await loadAll(); render(); toast('Mantenimiento registrado');
+      await loadAll(); if(files.length) await attachFiles(files,'mt_maintenance',r.id,v.id); render(); toast('Mantenimiento registrado');
     },
   });
 }
@@ -307,7 +368,9 @@ function settingsForm(){
 
 async function removeRow(table, id, msg){
   if(!confirm(msg)) return;
-  try{ await del(table, id); await loadAll(); render(); }catch(e){ toast(e.message); }
+  try{
+    for(const f of state.files.filter(f=>f.ref_col===table && f.ref_id===id)){ await del('mt_files',f.id); await del('mt_blobs',f.id); }
+    await del(table, id); await loadAll(); render(); }catch(e){ toast(e.message); }
 }
 
 /* ---------- vistas ---------- */
@@ -357,10 +420,10 @@ function viewVehicle(id){
   const docs = state.docs.filter(d=>d.vehicle_id===id), maint = state.maint.filter(m=>m.vehicle_id===id), kms = state.kmlog.filter(k=>k.vehicle_id===id);
   const del = (t,i,m) => `<button class="btn sm danger" data-del="${t}:${i}" data-msg="${m}">Borrar</button>`;
   const tabs = {
-    docs: `<div class="tablewrap"><table><tr><th>Documento</th><th>Expedición</th><th>Vence</th><th>Valor</th><th>Referencia</th><th></th></tr>
-      ${docs.map(d=>`<tr><td>${DOC_KINDS[d.kind]}</td><td>${fmtDate(d.issue_date)}</td><td>${fmtDate(d.expiry_date)}</td><td>${fmtMoney(d.cost)}</td><td class="wrap">${esc(d.reference||'')}</td><td>${del('mt_documents',d.id,'¿Borrar este registro?')}</td></tr>`).join('')||'<tr><td colspan="6" class="muted">Sin registros</td></tr>'}</table></div>`,
-    maint: `<div class="tablewrap"><table><tr><th>Tipo</th><th>Fecha</th><th>Km</th><th>Próximo</th><th>Costo</th><th>Taller / notas</th><th></th></tr>
-      ${maint.map(m=>`<tr><td>${MAINT_KINDS[m.kind]}</td><td>${fmtDate(m.done_at)}</td><td>${fmtKm(m.km)}</td><td>${m.next_km!=null?fmtKm(m.next_km):''} ${m.next_date?fmtDate(m.next_date):''}</td><td>${fmtMoney(m.cost)}</td><td class="wrap">${esc([m.shop,m.notes].filter(Boolean).join(' · '))}</td><td>${del('mt_maintenance',m.id,'¿Borrar este registro?')}</td></tr>`).join('')||'<tr><td colspan="7" class="muted">Sin registros</td></tr>'}</table></div>`,
+    docs: `<div class="tablewrap"><table><tr><th>Documento</th><th>Expedición</th><th>Vence</th><th>Valor</th><th>Referencia</th><th>Archivos</th><th></th></tr>
+      ${docs.map(d=>`<tr><td>${DOC_KINDS[d.kind]}</td><td>${fmtDate(d.issue_date)}</td><td>${fmtDate(d.expiry_date)}</td><td>${fmtMoney(d.cost)}</td><td class="wrap">${esc(d.reference||'')}</td><td class="wrap">${filesCell('mt_documents',d.id)}</td><td>${del('mt_documents',d.id,'¿Borrar este registro?')}</td></tr>`).join('')||'<tr><td colspan="7" class="muted">Sin registros</td></tr>'}</table></div>`,
+    maint: `<div class="tablewrap"><table><tr><th>Tipo</th><th>Fecha</th><th>Km</th><th>Próximo</th><th>Costo</th><th>Taller / notas</th><th>Archivos</th><th></th></tr>
+      ${maint.map(m=>`<tr><td>${MAINT_KINDS[m.kind]}</td><td>${fmtDate(m.done_at)}</td><td>${fmtKm(m.km)}</td><td>${m.next_km!=null?fmtKm(m.next_km):''} ${m.next_date?fmtDate(m.next_date):''}</td><td>${fmtMoney(m.cost)}</td><td class="wrap">${esc([m.shop,m.notes].filter(Boolean).join(' · '))}</td><td class="wrap">${filesCell('mt_maintenance',m.id)}</td><td>${del('mt_maintenance',m.id,'¿Borrar este registro?')}</td></tr>`).join('')||'<tr><td colspan="8" class="muted">Sin registros</td></tr>'}</table></div>`,
     km: `<div class="tablewrap"><table><tr><th>Fecha</th><th>Kilometraje</th><th></th></tr>
       ${kms.map(k=>`<tr><td>${fmtDate(k.logged_at)}</td><td>${fmtKm(k.km)}</td><td>${del('mt_kmlog',k.id,'¿Borrar esta lectura?')}</td></tr>`).join('')||'<tr><td colspan="3" class="muted">Sin registros</td></tr>'}</table></div>`,
   };
@@ -407,9 +470,12 @@ async function render(){
 
 /* ---------- eventos ---------- */
 document.addEventListener('click', async e => {
-  const el = e.target.closest('[data-go],[data-act],[data-tab],[data-del],[data-access]');
+  const el = e.target.closest('[data-go],[data-act],[data-tab],[data-del],[data-access],[data-file],[data-delfile],[data-attach]');
   if(!el) return;
   const vid = route()[0]==='v' ? route()[1] : null, v = state.vehicles.find(x=>x.id===vid);
+  if(el.dataset.file){ e.preventDefault(); openFile(el.dataset.file); return; }
+  if(el.dataset.delfile){ e.preventDefault(); deleteFile(el.dataset.delfile); return; }
+  if(el.dataset.attach){ const [c,i] = el.dataset.attach.split(':'); attachForm(c,i,vid); return; }
   if(el.dataset.go){ location.hash = el.dataset.go; return; }
   if(el.dataset.tab){ state.tab = el.dataset.tab; render(); return; }
   if(el.dataset.del){ const [t,i] = el.dataset.del.split(':'); removeRow(t,i,el.dataset.msg); return; }
@@ -430,8 +496,9 @@ document.addEventListener('click', async e => {
       if(confirm(`¿Eliminar ${v.name} y TODO su histórico? No se puede deshacer.`)){
         try{
           const batch = writeBatch(db);
-          for(const [col,rows] of [['mt_documents',state.docs],['mt_maintenance',state.maint],['mt_kmlog',state.kmlog]])
+          for(const [col,rows] of [['mt_documents',state.docs],['mt_maintenance',state.maint],['mt_kmlog',state.kmlog],['mt_files',state.files]])
             rows.filter(r=>r.vehicle_id===v.id).forEach(r=>batch.delete(doc(db,col,r.id)));
+          state.files.filter(f=>f.vehicle_id===v.id).forEach(f=>batch.delete(doc(db,'mt_blobs',f.id)));
           batch.delete(doc(db,'mt_vehicles',v.id)); await batch.commit(); await loadAll(); location.hash='#/'; render(); }catch(err){ toast(err.message); }
       } break;
     case 'km': kmForm(v); break;
