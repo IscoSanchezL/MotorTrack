@@ -148,6 +148,12 @@ async function loadUsers(){
 
 /* ---------- estado / alertas ---------- */
 function level(days){ return days < 0 ? 'bad' : days <= 15 ? 'bad' : days <= 30 ? 'warn' : 'ok'; }
+function kmPerDay(v){
+  const k = state.kmlog.filter(x=>x.vehicle_id===v.id);
+  if(k.length < 2) return null;
+  const a = k[k.length-1], b = k[0], days = (Date.parse(b.logged_at)-Date.parse(a.logged_at))/864e5;
+  return days >= 7 && b.km > a.km ? (b.km-a.km)/days : null;
+}
 function vehicleItems(v){
   const items = [];
   const kinds = [...TRACKED]; if(state.docs.some(d=>d.vehicle_id===v.id && d.kind==='seguro')) kinds.push('seguro');
@@ -162,11 +168,11 @@ function vehicleItems(v){
   const oil = state.maint.find(m => m.vehicle_id===v.id && m.kind==='aceite');
   if(!oil || oil.next_km == null) items.push({type:'oil',label:'Cambio de aceite',level:'none',text:'Sin registrar'});
   else{
-    const left = oil.next_km - v.current_km;
+    const left = oil.next_km - v.current_km, rate = kmPerDay(v);
     items.push({type:'oil',label:'Cambio de aceite',last:oil,
       level: left<=0 ? 'bad' : left<=v.alert_km_before ? 'warn' : 'ok',
       text: left<=0 ? `Pasado ${fmtKm(-left)}` : `Faltan ${fmtKm(left)}`,
-      detail:`Próximo a ${fmtKm(oil.next_km)}`});
+      detail:`Próximo a ${fmtKm(oil.next_km)}` + (rate && left>0 ? ` · ≈ ${Math.round(left/rate)} días (${Math.round(rate)} km/día)` : '')});
   }
   return items;
 }
@@ -218,7 +224,9 @@ function vehicleForm(v){
       {name:'plate',label:'Placa',required:true},
       {name:'brand',label:'Marca'},{name:'model',label:'Modelo / línea'},
       {name:'year',label:'Año',type:'number'},
-      ...(isNew ? [{name:'current_km',label:'Kilometraje actual',type:'number',required:true}] : []),
+      ...(isNew ? [{name:'current_km',label:'Kilometraje actual',type:'number',required:true},
+        {name:'last_oil_km',label:'Último cambio de aceite hecho a los (km) — opcional'},
+        {name:'last_oil_date',label:'Fecha de ese cambio (aprox.) — opcional',type:'date'}] : []),
       {name:'oil_interval_km',label:'Cambio de aceite cada (km)',type:'number',required:true,value:5000},
       {name:'alert_km_before',label:'Avisar cuando falten (km)',type:'number',required:true,value:500},
       {name:'notes',label:'Notas',type:'textarea'},
@@ -226,7 +234,10 @@ function vehicleForm(v){
     onSubmit: async d => {
       d.plate = d.plate.toUpperCase();
       if(isNew){
+        const oilKm = d.last_oil_km ? Number(String(d.last_oil_km).replace(/[.,\s]/g,'')) : null, oilDate = d.last_oil_date;
+        delete d.last_oil_km; delete d.last_oil_date;
         const row = await add('mt_vehicles', d);
+        if(oilKm) await add('mt_maintenance', {vehicle_id:row.id, kind:'aceite', done_at:oilDate||todayStr(), km:oilKm, next_km:oilKm+d.oil_interval_km});
         await add('mt_kmlog', {vehicle_id:row.id, km:d.current_km, logged_at:todayStr()});
       } else await upd('mt_vehicles', v.id, d);
       await loadAll(); render(); toast('Vehículo guardado');
