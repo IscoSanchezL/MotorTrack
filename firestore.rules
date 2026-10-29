@@ -1,0 +1,46 @@
+// MotorTrack comparte el proyecto Firebase con otras apps (LabsNexo).
+// NO reemplaces las reglas existentes: pega los bloques "match" de abajo
+// DENTRO de  match /databases/{database}/documents { ... }  y las funciones mt_* junto a ellos.
+// Todas las colecciones de MotorTrack empiezan con "mt_".
+
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ===== MotorTrack: funciones =====
+    function mtApproved() {
+      return request.auth != null
+        && exists(/databases/$(database)/documents/mt_users/$(request.auth.uid))
+        && get(/databases/$(database)/documents/mt_users/$(request.auth.uid)).data.approved == true;
+    }
+    function mtAdmin() {
+      return mtApproved()
+        && get(/databases/$(database)/documents/mt_users/$(request.auth.uid)).data.is_admin == true;
+    }
+    function mtOwn() { return mtApproved() && resource.data.user_id == request.auth.uid; }
+    function mtNew() { return mtApproved() && request.resource.data.user_id == request.auth.uid; }
+
+    // ===== MotorTrack: usuarios =====
+    match /mt_users/{id} {
+      allow read: if request.auth != null && (request.auth.uid == id || mtAdmin());
+      // Primer ingreso: queda pendiente; solo el dueño se autoaprueba como administrador
+      allow create: if request.auth != null && request.auth.uid == id && (
+        (request.resource.data.approved == false && request.resource.data.is_admin == false) ||
+        (request.auth.token.email == 'franksanlo@gmail.com' && request.auth.token.email_verified == true));
+      allow update: if request.auth != null && (
+        (request.auth.uid == id && request.resource.data.diff(resource.data).affectedKeys()
+            .hasOnly(['full_name','avatar_url','notify_email','telegram_chat_id'])) ||
+        (mtAdmin() && resource.data.is_admin == false
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['approved'])));
+    }
+
+    // ===== MotorTrack: datos de cada usuario =====
+    match /mt_vehicles/{id}    { allow read, delete: if mtOwn(); allow create: if mtNew(); allow update: if mtOwn() && mtNew(); }
+    match /mt_documents/{id}   { allow read, delete: if mtOwn(); allow create: if mtNew(); allow update: if mtOwn() && mtNew(); }
+    match /mt_maintenance/{id} { allow read, delete: if mtOwn(); allow create: if mtNew(); allow update: if mtOwn() && mtNew(); }
+    match /mt_kmlog/{id}       { allow read, delete: if mtOwn(); allow create: if mtNew(); allow update: if mtOwn() && mtNew(); }
+    // mt_remindersSent: sin reglas = solo el servidor (GitHub Actions) puede usarla
+
+    // ===== Aquí van las reglas que YA tenía LabsNexo =====
+  }
+}
