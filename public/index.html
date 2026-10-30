@@ -7,17 +7,19 @@
 <link rel="icon" href="logo.jpg">
 <style>
 :root{
-  --bg:#060b1a;--card:#0e1730;--text:#e8edf8;--muted:#8fa0c4;--line:#1f2d52;
+  --bg:#01091c;--card:#0e1730;--text:#e8edf8;--muted:#8fa0c4;--line:#1f2d52;
   --primary:#22b8ff;--primary-text:#04101f;--violet:#8b5cf6;
   --ok:#5eead4;--ok-bg:#0f3a38;--warn:#fcd34d;--warn-bg:#41330a;--bad:#fda4af;--bad-bg:#4a1626;--none:#cbd5e1;--none-bg:#222c47;
 }
 *{box-sizing:border-box}
 html{color-scheme:dark}
 body{margin:0;background:var(--bg);color:var(--text);font:16px/1.45 system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
-header.top{position:sticky;top:0;z-index:5;background:var(--card);border-bottom:1px solid var(--line)}
-header.top .in{max-width:980px;margin:auto;padding:10px 16px;display:flex;align-items:center;gap:12px}
-header.top h1{margin:0;flex:1;cursor:pointer;line-height:0}
-header.top h1 img{height:44px;width:auto}
+header.top{background:radial-gradient(ellipse at 50% 0%,#0c1c45 0%,var(--bg) 65%);border-bottom:1px solid var(--line)}
+header.top .in{max-width:980px;margin:auto;padding:6px 16px 12px;display:flex;flex-direction:column;align-items:center;gap:6px}
+.nav{display:flex;gap:10px;align-items:center;flex-wrap:wrap;justify-content:center}
+header.top h1{margin:0;cursor:pointer;line-height:0}
+header.top h1 img,.hero img{width:auto;-webkit-mask-image:linear-gradient(to right,transparent,#000 14%,#000 86%,transparent),linear-gradient(to bottom,transparent,#000 14%,#000 86%,transparent);-webkit-mask-composite:source-in;mask-image:linear-gradient(to right,transparent,#000 14%,#000 86%,transparent),linear-gradient(to bottom,transparent,#000 14%,#000 86%,transparent);mask-composite:intersect}
+header.top h1 img{height:150px}
 .hero{max-width:640px;margin:0 auto;padding:6vh 16px;text-align:center}
 .hero img{width:100%;height:auto;display:block;margin-bottom:18px}
 main{max-width:980px;margin:auto;padding:16px}
@@ -71,7 +73,7 @@ dialog::backdrop{background:#0008}
 #toast.on{opacity:1}
 .avatar{width:30px;height:30px;border-radius:50%}
 .badge{background:var(--bad);color:#fff;border-radius:99px;padding:0 7px;font-size:.75rem;margin-left:4px}
-@media(max-width:560px){header.top .hide-sm{display:none}header.top h1 img{height:34px}}
+@media(max-width:560px){header.top h1 img{height:110px}}
 </style>
 </head>
 <body>
@@ -317,10 +319,12 @@ function header(){
   const p = state.profile;
   return `<header class="top"><div class="in">
     <h1 data-go="#/"><img src="logo.jpg" alt="Iskonex MotorTrack"></h1>
+    <div class="nav">
     ${p?.is_admin ? `<button class="btn sm" data-go="#/admin">Usuarios${state.users.filter(u=>!u.approved).length?`<span class="badge">${state.users.filter(u=>!u.approved).length}</span>`:''}</button>`:''}
     ${p?.approved ? `<button class="btn sm" data-act="settings">🔔 Avisos</button>`:''}
     <span class="muted hide-sm">${esc(p?.email||'')}</span>
     <button class="btn sm ghost" data-act="logout">Salir</button>
+    </div>
   </div></header>`;
 }
 
