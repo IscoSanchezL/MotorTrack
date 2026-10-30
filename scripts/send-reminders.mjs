@@ -3,7 +3,10 @@ import { initializeApp, cert } from 'firebase-admin/app';
 import { getFirestore } from 'firebase-admin/firestore';
 
 const env = k => process.env[k] ?? '';
-initializeApp({ credential: cert(JSON.parse(env('FIREBASE_SERVICE_ACCOUNT'))) });
+let account;
+try { account = JSON.parse(env('FIREBASE_SERVICE_ACCOUNT')); }
+catch { console.error('Falta el secreto FIREBASE_SERVICE_ACCOUNT o no es un JSON válido. Créalo en GitHub > Settings > Secrets and variables > Actions (pega el contenido completo del archivo JSON).'); process.exit(1); }
+initializeApp({ credential: cert(account) });
 const db = getFirestore();
 
 const DOC_LABEL = { soat:'SOAT', impuesto:'Impuesto vehicular', tecno:'Revisión técnico-mecánica', seguro:'Seguro todo riesgo', otro:'Documento' };
