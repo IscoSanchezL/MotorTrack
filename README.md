@@ -3,7 +3,7 @@
 Control de SOAT, impuestos, técnico-mecánica, seguro, aceite y mantenimientos de carros y motos,
 con histórico, login con Google, aprobación del administrador y recordatorios gratis.
 
-**Stack:** HTML/JS estático (Cloudflare Pages) · Firebase Auth + Firestore · GitHub Actions (recordatorios diarios) · Brevo (correo) · Telegram.
+**Stack:** HTML/JS estático (Cloudflare Pages) · Firebase Auth + Firestore · GitHub Actions (recordatorios diarios) · Gmail (correo) · Telegram.
 Nada de Supabase. SMS no tiene opción gratuita confiable: se usa correo + Telegram.
 
 ## Pasos, en este orden
@@ -37,10 +37,10 @@ Entra a la web con `franksanlo@gmail.com`: queda **administrador y aprobado** au
 Los demás entran, ven "cuenta pendiente" y tú los apruebas en el botón **Usuarios**.
 
 ### 5. Recordatorios
-1. **Brevo** (brevo.com, 300 correos/día gratis): verificar tu Gmail como remitente y crear una API key.
+1. **Gmail:** los correos salen desde franksanlo@gmail.com. Activa la verificación en dos pasos en tu cuenta de Google y crea una **contraseña de aplicación** (myaccount.google.com/apppasswords, 16 letras).
 2. **Telegram** (opcional): @BotFather > `/newbot` > token. Cada usuario escribe a tu bot y pone su chat ID (lo da @userinfobot) en **🔔 Avisos**.
 3. GitHub > repo > Settings > Secrets and variables > Actions > crear:
-   `FIREBASE_SERVICE_ACCOUNT` (contenido completo del JSON), `BREVO_API_KEY`, `MAIL_FROM` (tu Gmail),
+   `FIREBASE_SERVICE_ACCOUNT` (contenido completo del JSON), `GMAIL_USER` (franksanlo@gmail.com), `GMAIL_APP_PASSWORD` (la de 16 letras),
    `TELEGRAM_BOT_TOKEN` (opcional), `APP_URL` (URL de la web).
 4. Actions > **Recordatorios** > *Run workflow* para probar. Después corre solo todos los días a las 8:00 a.m. Colombia.
 

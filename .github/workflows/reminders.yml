@@ -14,7 +14,7 @@ jobs:
       - run: node scripts/send-reminders.mjs
         env:
           FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
-          BREVO_API_KEY: ${{ secrets.BREVO_API_KEY }}
-          MAIL_FROM: ${{ secrets.MAIL_FROM }}
+          GMAIL_USER: ${{ secrets.GMAIL_USER }}
+          GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           APP_URL: ${{ secrets.APP_URL }}

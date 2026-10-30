@@ -1,6 +1,7 @@
-// Corre diario en GitHub Actions: avisa por correo (Brevo) y/o Telegram.
+// Corre diario en GitHub Actions: avisa por correo (Gmail) y/o Telegram.
 import { initializeApp, cert } from 'firebase-admin/app';
 import { getFirestore } from 'firebase-admin/firestore';
+import nodemailer from 'nodemailer';
 
 const env = k => process.env[k] ?? '';
 let account;
@@ -15,14 +16,11 @@ const today = () => new Date(Date.now() - 5 * 3600e3).toISOString().slice(0, 10)
 const daysLeft = d => (Date.parse(d) - Date.parse(today())) / 864e5;
 const all = async c => (await db.collection(c).get()).docs.map(d => ({ id: d.id, ...d.data() }));
 
-async function sendEmail(to, subject, html) {
-  const r = await fetch('https://api.brevo.com/v3/smtp/email', {
-    method: 'POST',
-    headers: { 'api-key': env('BREVO_API_KEY'), 'content-type': 'application/json' },
-    body: JSON.stringify({ sender: { name: 'Iskonex MotorTrack', email: env('MAIL_FROM') }, to: [{ email: to }], subject, htmlContent: html }),
-  });
-  if (!r.ok) throw new Error(`Brevo ${r.status}: ${await r.text()}`);
-}
+const mailer = env('GMAIL_USER') && env('GMAIL_APP_PASSWORD')
+  ? nodemailer.createTransport({ service: 'gmail', auth: { user: env('GMAIL_USER'), pass: env('GMAIL_APP_PASSWORD') } })
+  : null;
+const sendEmail = (to, subject, html) =>
+  mailer.sendMail({ from: `"Iskonex MotorTrack" <${env('GMAIL_USER')}>`, to, subject, html });
 async function sendTelegram(chatId, text) {
   const r = await fetch(`https://api.telegram.org/bot${env('TELEGRAM_BOT_TOKEN')}/sendMessage`, {
     method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ chat_id: chatId, text }),
@@ -31,7 +29,7 @@ async function sendTelegram(chatId, text) {
 }
 async function notify(p, subject, lines) {
   let ok = false;
-  if (p.notify_email && env('BREVO_API_KEY') && env('MAIL_FROM')) {
+  if (p.notify_email && mailer) {
     const app = env('APP_URL');
     const html = `<h2>${subject}</h2><ul>${lines.map(l => `<li>${l}</li>`).join('')}</ul>${app ? `<p><a href="${app}">Abrir MotorTrack</a></p>` : ''}`;
     try { await sendEmail(p.email, subject, html); ok = true; } catch (e) { console.error(p.email, e.message); }
